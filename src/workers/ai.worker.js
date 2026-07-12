@@ -3,12 +3,12 @@
  * Prevents UI freezing during heavy computations
  */
 
-// Import Transformers.js in worker context
-importScripts('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.10.0/dist/transformers.min.js');
+// Import Transformers.js as ES module
+import { pipeline, env } from '@xenova/transformers';
 
 // Configure environment — required for model downloading and caching
-self.transformers.env.allowRemoteModels = true;
-self.transformers.env.useBrowserCache = true;
+env.allowRemoteModels = true;
+env.useBrowserCache = true;
 
 let asrPipeline = null;
 let translationPipeline = null;
@@ -105,7 +105,7 @@ async function initializeASR(options = {}) {
       data: { message: 'Loading Whisper model...', progress: 0 } 
     });
 
-    asrPipeline = await self.transformers.pipeline(
+    asrPipeline = await pipeline(
       'automatic-speech-recognition',
       options.model || 'Xenova/whisper-tiny',
       {
@@ -151,7 +151,7 @@ async function initializeTranslation(options = {}) {
       data: { message: 'Loading NLLB translation model...', progress: 0 } 
     });
 
-    translationPipeline = await self.transformers.pipeline(
+    translationPipeline = await pipeline(
       'translation',
       options.model || 'Xenova/nllb-200-distilled-600M',
       {
@@ -200,18 +200,8 @@ async function transcribe(data) {
       data: { message: 'Transcribing audio...', progress: 50 } 
     });
 
-    // Convert audio data to Float32Array
-    let audioArray;
-    if (audioData instanceof ArrayBuffer) {
-      const audioContext = new AudioContext({ sampleRate: 16000 });
-      const audioBuffer = await audioContext.decodeAudioData(audioData);
-      audioArray = audioBuffer.getChannelData(0);
-      await audioContext.close();
-    } else if (audioData instanceof Float32Array) {
-      audioArray = audioData;
-    } else {
-      throw new Error('Unsupported audio data format');
-    }
+    // Audio data is already decoded in the main thread (Float32Array)
+    const audioArray = audioData;
 
     const result = await asrPipeline(audioArray, {
       language: options.language || 'twi',
