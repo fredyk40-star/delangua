@@ -13,6 +13,9 @@ import { pipeline, env } from '@xenova/transformers';
 env.allowLocalModels = false;
 env.allowRemoteModels = true;
 env.useBrowserCache = true;
+// Disable proxy worker to avoid blob URL MIME type issues on Vercel
+env.wasm = env.wasm || {};
+env.wasm.proxy = false;
 // Use the library's built-in defaults for remoteHost and remotePathTemplate:
 //   remoteHost: 'https://huggingface.co/'
 //   remotePathTemplate: '{model}/resolve/{revision}/'
@@ -127,7 +130,7 @@ async function initializeASR(options = {}) {
             } 
           });
         },
-        quantized: false
+        quantized: true
       }
     );
 
@@ -172,7 +175,7 @@ async function initializeTranslation(options = {}) {
             } 
           });
         },
-        quantized: false
+        quantized: true
       }
     );
 
