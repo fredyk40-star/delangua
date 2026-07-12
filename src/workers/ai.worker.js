@@ -9,6 +9,8 @@ import { pipeline, env } from '@xenova/transformers';
 // Configure environment — required for model downloading and caching
 env.allowRemoteModels = true;
 env.useBrowserCache = true;
+env.remoteHost = 'https://huggingface.co';
+env.remotePathTemplate = '{model}/resolve/{revision}/{file}';
 
 let asrPipeline = null;
 let translationPipeline = null;
