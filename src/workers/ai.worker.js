@@ -127,8 +127,7 @@ async function initializeASR(options = {}) {
             } 
           });
         },
-        device: 'auto',
-        dtype: 'fp32'
+        quantized: false
       }
     );
 
@@ -173,8 +172,7 @@ async function initializeTranslation(options = {}) {
             } 
           });
         },
-        device: 'auto',
-        dtype: 'fp32'
+        quantized: false
       }
     );
 
