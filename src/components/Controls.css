@@ -1,0 +1,134 @@
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 2rem;
+  padding: 1.5rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.control-btn {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 0.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  min-width: 120px;
+}
+
+.control-btn.primary {
+  background: linear-gradient(135deg, #00d4ff, #7b2ffc);
+  color: white;
+}
+
+.control-btn.primary:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 20px rgba(0, 212, 255, 0.3);
+}
+
+.control-btn.primary.recording {
+  background: linear-gradient(135deg, #ff4444, #ff6b6b);
+  animation: pulse-bg 1.5s infinite;
+}
+
+.control-btn.danger {
+  background: rgba(255, 68, 68, 0.2);
+  color: #ff4444;
+  border: 1px solid rgba(255, 68, 68, 0.3);
+}
+
+.control-btn.danger:hover {
+  background: rgba(255, 68, 68, 0.3);
+}
+
+.control-btn.secondary {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.control-btn.secondary:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.control-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+  padding: 0.5rem 1rem;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 999px;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  transition: background-color 0.3s ease;
+}
+
+.status-dot.ready {
+  background: #00ff64;
+  animation: pulse 2s infinite;
+}
+
+.status-dot.loading {
+  background: #ffaa00;
+  animation: pulse 1s infinite;
+}
+
+.status-dot.error {
+  background: #ff4444;
+}
+
+.status-text {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@keyframes pulse-bg {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+@media (max-width: 768px) {
+  .controls {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+  }
+  
+  .control-btn {
+    width: 100%;
+  }
+  
+  .status-indicator {
+    justify-content: center;
+    margin-left: 0;
+  }
+}

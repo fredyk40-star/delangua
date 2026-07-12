@@ -1,0 +1,19 @@
+{
+  "name": "Fred Delangua - Twi to English Translator",
+  "short_name": "Fred Delangua",
+  "description": "Offline-first Twi to English translation using AI",
+  "theme_color": "#1a1a2e",
+  "background_color": "#16213e",
+  "display": "standalone",
+  "orientation": "portrait",
+  "scope": "/",
+  "start_url": "/",
+  "icons": [
+    {
+      "src": "/icons/icon-72x72.png",
+      "sizes": "72x72",
+      "type": "image/png",
+      "purpose": "maskable any"
+    }
+  ]
+}
