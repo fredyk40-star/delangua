@@ -6,6 +6,10 @@
 // Import Transformers.js in worker context
 importScripts('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.10.0/dist/transformers.min.js');
 
+// Configure environment — required for model downloading and caching
+self.transformers.env.allowRemoteModels = true;
+self.transformers.env.useBrowserCache = true;
+
 let asrPipeline = null;
 let translationPipeline = null;
 let isInitialized = false;
