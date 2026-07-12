@@ -7,6 +7,10 @@
 import { pipeline, env } from '@xenova/transformers';
 
 // Configure environment — required for model downloading and caching
+// Disable local model loading: this app doesn't serve model files from its
+// own origin, and the SPA rewrite rule in vercel.json would otherwise serve
+// index.html (HTML) for /models/... paths, causing JSON parse errors.
+env.allowLocalModels = false;
 env.allowRemoteModels = true;
 env.useBrowserCache = true;
 env.remoteHost = 'https://huggingface.co';
