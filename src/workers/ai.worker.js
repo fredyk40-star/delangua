@@ -13,8 +13,11 @@ import { pipeline, env } from '@xenova/transformers';
 env.allowLocalModels = false;
 env.allowRemoteModels = true;
 env.useBrowserCache = true;
-env.remoteHost = 'https://huggingface.co';
-env.remotePathTemplate = '{model}/resolve/{revision}/{file}';
+// Use the library's built-in defaults for remoteHost and remotePathTemplate:
+//   remoteHost: 'https://huggingface.co/'
+//   remotePathTemplate: '{model}/resolve/{revision}/'
+// (Do NOT add a {file} placeholder — it's not a recognized token and would
+//  be treated as a literal directory, producing invalid URLs.)
 
 let asrPipeline = null;
 let translationPipeline = null;
