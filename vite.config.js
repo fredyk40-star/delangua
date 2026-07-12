@@ -7,16 +7,14 @@ export default defineConfig({
   ],
   // Skip optimization for problematic packages
   optimizeDeps: {
-    include: ['react', 'react-dom'],
-    exclude: ['@huggingface/transformers', 'onnxruntime-web']
+    include: ['react', 'react-dom']
   },
   // Build configuration
   build: {
     rollupOptions: {
       output: {
         manualChunks: {
-          'react-vendor': ['react', 'react-dom'],
-          'transformers': ['@huggingface/transformers']
+          'react-vendor': ['react', 'react-dom']
         }
       }
     },
