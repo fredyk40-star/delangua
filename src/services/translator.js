@@ -1,16 +1,17 @@
-import { pipeline, env } from '@huggingface/transformers';
-
-// Configure Transformers.js environment
-env.useBrowserCache = true;
-env.allowRemoteModels = true;
+/**
+ * Translator - delegates NLLB translation to the AI worker
+ * Public API matches original: initialize(), translateText(), getModelInfo(), unload(), getSupportedLanguages()
+ */
 
 class Translator {
   constructor() {
-    this.pipeline = null;
+    this.worker = null;
     this.isLoading = false;
     this.isLoaded = false;
     this.progress = 0;
     this.modelName = 'Xenova/nllb-200-distilled-600M';
+    this._messageId = 0;
+    this._pending = new Map();
     this.supportedLanguages = {
       'twi': 'twi_Latn',
       'eng': 'eng_Latn',
@@ -37,10 +38,62 @@ class Translator {
     };
   }
 
+  _getWorker() {
+    if (!this.worker) {
+      this.worker = new Worker(
+        new URL('../workers/ai.worker.js', import.meta.url),
+        { type: 'module' }
+      );
+      this.worker.addEventListener('message', this._handleWorkerMessage.bind(this));
+      this.worker.addEventListener('error', (e) => {
+        console.error('Translation worker error:', e);
+      });
+    }
+    return this.worker;
+  }
+
+  _handleWorkerMessage(event) {
+    const { type, data, id } = event.data;
+    const pending = this._pending.get(id);
+    if (!pending) return;
+
+    switch (type) {
+      case 'PROGRESS':
+        this.progress = data.progress / 100;
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('translationModelProgress', {
+            detail: { progress: data.progress }
+          }));
+        }
+        break;
+      case 'INITIALIZED':
+        this.isLoaded = true;
+        this.isLoading = false;
+        this.progress = 1;
+        pending.resolve();
+        break;
+      case 'TRANSLATION_RESULT':
+        pending.resolve(data);
+        break;
+      case 'ERROR':
+        pending.reject(new Error(data.message));
+        break;
+    }
+    this._pending.delete(id);
+  }
+
+  _sendMessage(type, data = {}) {
+    const id = ++this._messageId;
+    this._getWorker().postMessage({ type, data, id });
+    return new Promise((resolve, reject) => {
+      this._pending.set(id, { resolve, reject });
+    });
+  }
+
   async initialize() {
     if (this.isLoaded) {
       console.log('✅ Translator already initialized');
-      return this.pipeline;
+      return;
     }
 
     if (this.isLoading) {
@@ -49,7 +102,7 @@ class Translator {
         const checkLoaded = setInterval(() => {
           if (this.isLoaded) {
             clearInterval(checkLoaded);
-            resolve(this.pipeline);
+            resolve();
           }
         }, 100);
       });
@@ -57,39 +110,14 @@ class Translator {
 
     try {
       this.isLoading = true;
-      console.log('🚀 Loading NLLB translation model...');
-
-      this.pipeline = await pipeline(
-        'translation',
-        this.modelName,
-        {
-          progress_callback: this.handleProgress.bind(this),
-          dtype: 'fp32'
-        }
-      );
-
-      this.isLoaded = true;
-      this.isLoading = false;
-      console.log('✅ NLLB translation model loaded successfully!');
-      return this.pipeline;
-
+      console.log('� Initializing NLLB translation model in worker...');
+      await this._sendMessage('INITIALIZE_TRANSLATION', { model: this.modelName });
+      console.log('✅ NLLB translation model initialized in worker');
     } catch (error) {
       console.error('❌ Failed to load translation model:', error);
       this.isLoading = false;
       this.isLoaded = false;
       throw new Error(`Translation model loading failed: ${error.message}`);
-    }
-  }
-
-  handleProgress(progress) {
-    const pct = typeof progress === 'object' ? (progress.progress || 0) : progress;
-    this.progress = pct;
-    console.log(`📊 Translation model loading: ${Math.round(pct * 100)}%`);
-    
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('translationModelProgress', {
-        detail: { progress: Math.round(pct * 100) }
-      }));
     }
   }
 
@@ -104,47 +132,40 @@ class Translator {
 
     try {
       console.log(`🌍 Translating from ${sourceLang} to ${targetLang}...`);
-      
-      const sourceCode = this.supportedLanguages[sourceLang] || sourceLang;
-      const targetCode = this.supportedLanguages[targetLang] || targetLang;
-
-      const translationOptions = {
-        tgt_lang: targetCode,
-        src_lang: sourceCode,
-        max_length: options.maxLength || 512,
-        num_beams: options.numBeams || 5,
-        temperature: options.temperature || 1.0,
-        top_k: options.topK || 50,
-        top_p: options.topP || 1.0,
-        repetition_penalty: options.repetitionPenalty || 1.0,
-        length_penalty: options.lengthPenalty || 1.0,
-        ...options
-      };
 
       const maxChunkSize = 200;
-      const sentences = this.splitIntoSentences(text);
-      const chunks = this.createChunks(sentences, maxChunkSize);
-      
+      const sentences = this._splitIntoSentences(text);
+      const chunks = this._createChunks(sentences, maxChunkSize);
+
       let translatedChunks = [];
-      
+
       for (let i = 0; i < chunks.length; i++) {
         const chunk = chunks[i];
         console.log(`📝 Translating chunk ${i + 1}/${chunks.length}...`);
-        
-        this.dispatchProgress(Math.round(((i + 1) / chunks.length) * 100));
-        
-        const result = await this.pipeline(chunk, translationOptions);
-        // v3 returns array of { translation_text } objects
-        translatedChunks.push(result[0].translation_text);
+
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('translationProgress', {
+            detail: { progress: Math.round(((i + 1) / chunks.length) * 100) }
+          }));
+        }
+
+        const result = await this._sendMessage('TRANSLATE', {
+          text: chunk,
+          sourceLang,
+          targetLang,
+          options
+        });
+
+        translatedChunks.push(result.translatedText);
       }
 
       const translatedText = translatedChunks.join(' ');
-      
+
       console.log('✅ Translation complete!');
-      
+
       return {
         originalText: text,
-        translatedText: translatedText,
+        translatedText,
         sourceLanguage: sourceLang,
         targetLanguage: targetLang,
         chunks: translatedChunks.length,
@@ -157,18 +178,18 @@ class Translator {
     }
   }
 
-  splitIntoSentences(text) {
+  _splitIntoSentences(text) {
     return text.match(/[^.!?]+[.!?]+/g) || [text];
   }
 
-  createChunks(sentences, maxLength) {
+  _createChunks(sentences, maxLength) {
     const chunks = [];
     let currentChunk = '';
-    
+
     for (const sentence of sentences) {
-      const estimatedTokens = currentChunk.split(' ').length * 1.3 + 
-                             sentence.split(' ').length * 1.3;
-      
+      const estimatedTokens = currentChunk.split(' ').length * 1.3 +
+                            sentence.split(' ').length * 1.3;
+
       if (estimatedTokens > maxLength && currentChunk) {
         chunks.push(currentChunk.trim());
         currentChunk = sentence;
@@ -176,20 +197,12 @@ class Translator {
         currentChunk += (currentChunk ? ' ' : '') + sentence;
       }
     }
-    
+
     if (currentChunk) {
       chunks.push(currentChunk.trim());
     }
-    
-    return chunks;
-  }
 
-  dispatchProgress(progress) {
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('translationProgress', {
-        detail: { progress }
-      }));
-    }
+    return chunks;
   }
 
   getSupportedLanguages() {
@@ -214,19 +227,21 @@ class Translator {
   }
 
   async unload() {
-    if (this.pipeline) {
-      this.pipeline = null;
-      this.isLoaded = false;
-      this.isLoading = false;
-      this.progress = 0;
-      console.log('🗑️ Translation model unloaded');
+    if (this.worker) {
+      this.worker.terminate();
+      this.worker = null;
     }
+    this.isLoaded = false;
+    this.isLoading = false;
+    this.progress = 0;
+    this._pending.clear();
+    console.log('🗑️ Translation model unloaded');
   }
 }
 
 export const translator = new Translator();
 export const initializeTranslator = () => translator.initialize();
-export const translateText = (text, sourceLang, targetLang, options) => 
+export const translateText = (text, sourceLang, targetLang, options) =>
   translator.translateText(text, sourceLang, targetLang, options);
 export const getSupportedLanguages = () => translator.getSupportedLanguages();
 export default translator;

@@ -1,23 +1,78 @@
-import { pipeline, env } from '@huggingface/transformers';
-
-// Configure Transformers.js environment
-env.useBrowserCache = true;
-// Use the Hugging Face CDN directly (default behavior)
-env.allowRemoteModels = true;
+/**
+ * SpeechProcessor - delegates ASR to the AI worker
+ * Public API matches original: initialize(), transcribeAudio(), getModelInfo(), unload()
+ */
 
 class SpeechProcessor {
   constructor() {
-    this.pipeline = null;
+    this.worker = null;
     this.isLoading = false;
     this.isLoaded = false;
     this.progress = 0;
     this.modelName = 'Xenova/whisper-tiny';
+    this._pendingResolve = null;
+    this._pendingReject = null;
+    this._messageId = 0;
+    this._pending = new Map();
+  }
+
+  _getWorker() {
+    if (!this.worker) {
+      this.worker = new Worker(
+        new URL('../workers/ai.worker.js', import.meta.url),
+        { type: 'module' }
+      );
+      this.worker.addEventListener('message', this._handleWorkerMessage.bind(this));
+      this.worker.addEventListener('error', (e) => {
+        console.error('Speech worker error:', e);
+        if (this._pendingReject) this._pendingReject(e);
+      });
+    }
+    return this.worker;
+  }
+
+  _handleWorkerMessage(event) {
+    const { type, data, id } = event.data;
+    const pending = this._pending.get(id);
+    if (!pending) return;
+
+    switch (type) {
+      case 'PROGRESS':
+        this.progress = data.progress / 100;
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('modelProgress', {
+            detail: { progress: data.progress }
+          }));
+        }
+        break;
+      case 'INITIALIZED':
+        this.isLoaded = true;
+        this.isLoading = false;
+        this.progress = 1;
+        pending.resolve();
+        break;
+      case 'TRANSCRIPTION_RESULT':
+        pending.resolve(data);
+        break;
+      case 'ERROR':
+        pending.reject(new Error(data.message));
+        break;
+    }
+    this._pending.delete(id);
+  }
+
+  _sendMessage(type, data = {}) {
+    const id = ++this._messageId;
+    this._getWorker().postMessage({ type, data, id });
+    return new Promise((resolve, reject) => {
+      this._pending.set(id, { resolve, reject });
+    });
   }
 
   async initialize() {
     if (this.isLoaded) {
       console.log('✅ Speech processor already initialized');
-      return this.pipeline;
+      return;
     }
 
     if (this.isLoading) {
@@ -26,7 +81,7 @@ class SpeechProcessor {
         const checkLoaded = setInterval(() => {
           if (this.isLoaded) {
             clearInterval(checkLoaded);
-            resolve(this.pipeline);
+            resolve();
           }
         }, 100);
       });
@@ -34,40 +89,14 @@ class SpeechProcessor {
 
     try {
       this.isLoading = true;
-      console.log('🚀 Loading Whisper model...');
-
-      this.pipeline = await pipeline(
-        'automatic-speech-recognition',
-        this.modelName,
-        {
-          progress_callback: this.handleProgress.bind(this),
-          dtype: 'fp32',
-        }
-      );
-
-      this.isLoaded = true;
-      this.isLoading = false;
-      console.log('✅ Whisper model loaded successfully!');
-      return this.pipeline;
-
+      console.log('🚀 Initializing Whisper model in worker...');
+      await this._sendMessage('INITIALIZE_ASR', { model: this.modelName });
+      console.log('✅ Whisper model initialized in worker');
     } catch (error) {
       console.error('❌ Failed to load Whisper model:', error);
       this.isLoading = false;
       this.isLoaded = false;
       throw new Error(`Model loading failed: ${error.message}`);
-    }
-  }
-
-  handleProgress(progress) {
-    // In v3, progress can be a number or an object with progress field
-    const pct = typeof progress === 'object' ? (progress.progress || 0) : progress;
-    this.progress = pct;
-    console.log(`📊 Model loading: ${Math.round(pct * 100)}%`);
-    
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('modelProgress', {
-        detail: { progress: Math.round(pct * 100) }
-      }));
     }
   }
 
@@ -78,24 +107,18 @@ class SpeechProcessor {
 
     try {
       console.log('🎤 Starting transcription...');
-      
-      const audioBuffer = await audioBlob.arrayBuffer();
-      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-      const audioData = await audioContext.decodeAudioData(audioBuffer);
-      const samples = audioData.getChannelData(0);
-      const float32Array = new Float32Array(samples);
-      
-      const pipelineOptions = {
-        language: null, // Auto-detect when not specified
-        task: 'transcribe',
-        return_timestamps: false,
-        chunk_length_s: 30,
-        stride_length_s: 5,
-        ...options
-      };
 
-      const result = await this.pipeline(float32Array, pipelineOptions);
-      
+      const audioBuffer = await audioBlob.arrayBuffer();
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+      const audioData = await audioContext.decodeAudioData(audioBuffer);
+      const float32Array = audioData.getChannelData(0);
+      await audioContext.close();
+
+      const result = await this._sendMessage('TRANSCRIBE', {
+        audioData: float32Array,
+        options
+      });
+
       console.log('✅ Transcription complete!');
       return {
         text: result.text,
@@ -130,19 +153,21 @@ class SpeechProcessor {
   }
 
   async unload() {
-    if (this.pipeline) {
-      this.pipeline = null;
-      this.isLoaded = false;
-      this.isLoading = false;
-      this.progress = 0;
-      console.log('🗑️ Speech processor unloaded');
+    if (this.worker) {
+      this.worker.terminate();
+      this.worker = null;
     }
+    this.isLoaded = false;
+    this.isLoading = false;
+    this.progress = 0;
+    this._pending.clear();
+    console.log('🗑️ Speech processor unloaded');
   }
 }
 
 export const speechProcessor = new SpeechProcessor();
 export const initializeSpeechProcessor = () => speechProcessor.initialize();
-export const transcribeAudio = (audioBlob, options) => 
+export const transcribeAudio = (audioBlob, options) =>
   speechProcessor.transcribeAudio(audioBlob, options);
 export const getModelInfo = () => speechProcessor.getModelInfo();
 export default speechProcessor;
