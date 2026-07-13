@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import useTranslationEngine from '../hooks/useTranslationEngine';
 import TranslationDisplay from './TranslationDisplay';
 import './Dashboard.css';
@@ -20,13 +20,12 @@ function Dashboard() {
     stopRecording,
     cancelRecording,
     translateText,
-    clearAll,
-    getRecordingStatus
+    clearAll
   } = useTranslationEngine();
 
   const [inputText, setInputText] = useState('');
   const [recordingDuration, setRecordingDuration] = useState(0);
-  const [timerInterval, setTimerInterval] = useState(null);
+  const timerIntervalRef = useRef(null);
   const [showManualTranslate, setShowManualTranslate] = useState(false);
 
   // Auto-initialize on mount
@@ -40,21 +39,21 @@ function Dashboard() {
       const interval = setInterval(() => {
         setRecordingDuration(prev => prev + 1);
       }, 1000);
-      setTimerInterval(interval);
+      timerIntervalRef.current = interval;
     } else {
-      if (timerInterval) {
-        clearInterval(timerInterval);
-        setTimerInterval(null);
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
       }
-      setRecordingDuration(0);
     }
 
     return () => {
-      if (timerInterval) {
-        clearInterval(timerInterval);
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
       }
     };
-  }, [isRecording, timerInterval]);
+  }, [isRecording]);
+
 
   const formatDuration = (seconds) => {
     const mins = Math.floor(seconds / 60);

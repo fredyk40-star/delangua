@@ -63,11 +63,27 @@ export const useStreamingTranslation = () => {
     setIsEditing(true);
   }, []);
 
+  const translateText = useCallback(async (text) => {
+    if (!text || !text.trim()) return;
+    try {
+      setIsTranslating(true);
+      const srcLang = sourceLang === 'auto' ? (detectedLang || 'twi') : sourceLang;
+      const result = await translator.translateText(text, srcLang, targetLang, { maxLength: 512, numBeams: 3 });
+      if (result && result.translatedText) {
+        fullTranslationRef.current = result.translatedText;
+        setTranslation(result.translatedText);
+        setPartialTranslation(result.translatedText);
+        incrementDaily();
+        setDailyCount(getDailyCount());
+      }
+      setIsTranslating(false);
+    } catch (err) { console.error('Translation error:', err); setIsTranslating(false); }
+  }, [sourceLang, targetLang, detectedLang]);
+
   const saveEdit = useCallback(async (newText) => {
     fullTextRef.current = newText;
     setTranscription(newText);
     setIsEditing(false);
-    // Re-translate with edited text
     if (newText.trim()) {
       setIsTranslating(true);
       try {
@@ -88,6 +104,34 @@ export const useStreamingTranslation = () => {
     setIsEditing(false);
     setEditText('');
   }, []);
+
+  const monitorAudioLevel = () => {
+    if (!analyserRef.current) return;
+    const SILENCE_THRESHOLD = 8;
+    const SILENCE_DURATION = 3000;
+    const updateLevel = () => {
+      if (!isRecordingRef.current) return;
+      const a = analyserRef.current;
+      const d = dataArrayRef.current;
+      if (a && d) {
+        a.getByteFrequencyData(d);
+        const avg = d.reduce((x, y) => x + y, 0) / d.length;
+        const level = Math.min((avg / 128) * 100, 100);
+        setAudioLevel(level);
+        const now = Date.now();
+        if (level > SILENCE_THRESHOLD) {
+          lastAudioLevelTimeRef.current = now;
+          if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null; }
+        } else if (!silenceTimerRef.current && now - lastAudioLevelTimeRef.current > SILENCE_DURATION) {
+          silenceTimerRef.current = setTimeout(() => {
+            if (isRecordingRef.current && mediaRecorderRef.current) mediaRecorderRef.current.stop();
+          }, 500);
+        }
+      }
+      requestAnimationFrame(updateLevel);
+    };
+    updateLevel();
+  };
 
   const startRecording = useCallback(async () => {
     try {
@@ -120,8 +164,8 @@ export const useStreamingTranslation = () => {
       const mimeTypes = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/mp4;codecs=opus'];
       const mimeType = mimeTypes.find(t => MediaRecorder.isTypeSupported(t)) || '';
       const mediaRecorder = new MediaRecorder(stream, { mimeType, audioBitsPerSecond: 128000 });
-      mediaRecorder.ondataavailable = async (e) => {
-        if (e.data.size > 0) { chunksRef.current.push(e.data); if (!isProcessing) await processAudioChunk(e.data); }
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
       };
       mediaRecorder.start(500);
       mediaRecorderRef.current = mediaRecorder;
@@ -129,80 +173,12 @@ export const useStreamingTranslation = () => {
       isRecordingRef.current = true;
 
       let seconds = 0;
+      setRecordingDuration(0);
       timerIntervalRef.current = setInterval(() => { seconds++; setRecordingDuration(seconds); }, 1000);
       lastAudioLevelTimeRef.current = Date.now();
       monitorAudioLevel();
     } catch (err) { setError(err.message); throw err; }
-  }, [isProcessing]);
-
-  const monitorAudioLevel = () => {
-    if (!analyserRef.current) return;
-    const SILENCE_THRESHOLD = 8;
-    const SILENCE_DURATION = 3000;
-    const updateLevel = () => {
-      if (!isRecordingRef.current) return;
-      const a = analyserRef.current;
-      const d = dataArrayRef.current;
-      if (a && d) {
-        a.getByteFrequencyData(d);
-        const avg = d.reduce((x,y) => x+y, 0) / d.length;
-        const level = Math.min((avg/128)*100, 100);
-        setAudioLevel(level);
-        const now = Date.now();
-        if (level > SILENCE_THRESHOLD) {
-          lastAudioLevelTimeRef.current = now;
-          if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null; }
-        } else if (!silenceTimerRef.current && now - lastAudioLevelTimeRef.current > SILENCE_DURATION) {
-          silenceTimerRef.current = setTimeout(() => {
-            if (isRecordingRef.current && mediaRecorderRef.current) mediaRecorderRef.current.stop();
-          }, 500);
-        }
-      }
-      requestAnimationFrame(updateLevel);
-    };
-    updateLevel();
-  };
-
-  const processAudioChunk = useCallback(async (audioData) => {
-    if (isProcessing) return;
-    try {
-      setIsProcessing(true);
-      const chunkBlob = new Blob([audioData], { type: 'audio/webm' });
-      const lang = sourceLang === 'auto' ? undefined : sourceLang;
-      const result = await speechProcessor.transcribeAudio(chunkBlob, { language: lang, return_timestamps: true });
-      if (result && result.text) {
-        if (result.confidence) setConfidence(result.confidence);
-        if (result.language) setDetectedLang(result.language);
-        const current = fullTextRef.current;
-        const next = result.text.trim();
-        if (next && !current.endsWith(next)) {
-          const updated = current ? `${current} ${next}` : next;
-          fullTextRef.current = updated;
-          setTranscription(updated);
-          setPartialTranscription(next);
-          await translateText(updated);
-        }
-      }
-      setIsProcessing(false);
-    } catch (err) { console.error('Chunk error:', err); setIsProcessing(false); }
-  }, [isProcessing, sourceLang]);
-
-  const translateText = useCallback(async (text) => {
-    if (!text || !text.trim()) return;
-    try {
-      setIsTranslating(true);
-      const srcLang = sourceLang === 'auto' ? (detectedLang || 'twi') : sourceLang;
-      const result = await translator.translateText(text, srcLang, targetLang, { maxLength: 512, numBeams: 3 });
-      if (result && result.translatedText) {
-        fullTranslationRef.current = result.translatedText;
-        setTranslation(result.translatedText);
-        setPartialTranslation(result.translatedText);
-        incrementDaily();
-        setDailyCount(getDailyCount());
-      }
-      setIsTranslating(false);
-    } catch (err) { console.error('Translation error:', err); setIsTranslating(false); }
-  }, [sourceLang, targetLang, detectedLang]);
+  }, []);
 
   const directTranslateText = useCallback(async (text) => {
     if (!text || !text.trim()) return;
@@ -250,20 +226,20 @@ export const useStreamingTranslation = () => {
           setIsProcessing(false);
         }
         if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; }
-        if (audioContextRef.current) { audioContextRef.current.close(); audioContextRef.current = null; }
+        if (audioContextRef.current && audioContextRef.current.state !== 'closed') { audioContextRef.current.close(); audioContextRef.current = null; }
         setIsRecording(false); isRecordingRef.current = false; setAudioLevel(0); setRecordingDuration(0);
         resolve();
       };
       mediaRecorderRef.current.stop();
     });
-  }, [isRecording, isProcessing, sourceLang]);
+  }, [isRecording, isProcessing, sourceLang, translateText]);
 
   const cancelRecording = useCallback(() => {
     if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null; }
     if (timerIntervalRef.current) { clearInterval(timerIntervalRef.current); timerIntervalRef.current = null; }
     if (mediaRecorderRef.current) { mediaRecorderRef.current.onstop = null; mediaRecorderRef.current.stop(); }
     if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; }
-    if (audioContextRef.current) { audioContextRef.current.close(); audioContextRef.current = null; }
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') { audioContextRef.current.close(); audioContextRef.current = null; }
     setIsRecording(false); isRecordingRef.current = false; setAudioLevel(0); setRecordingDuration(0);
     setPartialTranscription(''); setPartialTranslation(''); setError(null);
   }, []);
@@ -280,7 +256,7 @@ export const useStreamingTranslation = () => {
     if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
     if (mediaRecorderRef.current && isRecording) mediaRecorderRef.current.stop();
     if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
-    if (audioContextRef.current) audioContextRef.current.close();
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') audioContextRef.current.close();
   }, [isRecording]);
 
   return {
@@ -298,9 +274,9 @@ export const useStreamingTranslation = () => {
     directTranslateText,
     startEditing, saveEdit, cancelEdit,
     formatDuration: (s) => {
-      const m = Math.floor(s/60);
+      const m = Math.floor(s / 60);
       const sec = s % 60;
-      return `${m}:${sec.toString().padStart(2,'0')}`;
+      return `${m}:${sec.toString().padStart(2, '0')}`;
     }
   };
 };

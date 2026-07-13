@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import useStreamingTranslation from '../hooks/useStreamingTranslation';
 import { speechProcessor } from '../services/speechProcessor';
 import { translator } from '../services/translator';
@@ -21,15 +21,15 @@ function saveHistory(entry) {
     history.unshift(entry);
     if (history.length > MAX_HISTORY) history.pop();
     localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
-  } catch {}
+  } catch { /* no-op */ }
 }
-function clearHistoryStorage() { try { localStorage.removeItem(HISTORY_KEY); } catch {} }
+function clearHistoryStorage() { try { localStorage.removeItem(HISTORY_KEY); } catch { /* no-op */ } }
 function updateHistoryNote(id, note) {
   try {
     const history = loadHistory();
     const entry = history.find(e => e.id === id);
     if (entry) { entry.note = note; localStorage.setItem(HISTORY_KEY, JSON.stringify(history)); }
-  } catch {}
+  } catch { /* no-op */ }
 }
 
 const SUPPORTED_LANGS = [
@@ -72,13 +72,14 @@ const TranslatorDashboard = () => {
   const {
     isRecording, isProcessing, isTranslating,
     transcription, translation,
-    partialTranscription, partialTranslation,
+    partialTranscription,
     error, setError, audioLevel, recordingDuration, confidence,
     sourceLang, targetLang, detectedLang,
     inputText, setInputText,
     dailyCount,
     isEditing, editText, setEditText,
     setLanguages,
+    setTranscription, setIsTranslating, setTranslation,
     startRecording, stopRecording, cancelRecording, clearResults,
     directTranslateText,
     startEditing, saveEdit, cancelEdit,
@@ -111,6 +112,7 @@ const TranslatorDashboard = () => {
   const translationRef = useRef(null);
   const editInputRef = useRef(null);
   const utteranceRef = useRef(null);
+  const initRef = useRef(false);
 
   // Resolved theme
   const resolvedTheme = theme === 'auto' ? (systemPrefersDark ? 'dark' : 'light') : theme;
@@ -132,7 +134,7 @@ const TranslatorDashboard = () => {
   // Notification when models loaded
   useEffect(() => {
     if (isInitialized && !notifiedReady && Notification.permission !== 'denied') {
-      setNotifiedReady(true);
+      setTimeout(() => setNotifiedReady(true), 0);
       if (Notification.permission === 'granted') {
         new Notification('Fred Delangua', { body: '✅ Models ready — start translating!', icon: '/icons/icon-72x72.png' });
       } else if (Notification.permission === 'default') {
@@ -155,9 +157,9 @@ const TranslatorDashboard = () => {
   useEffect(() => {
     if (transcription && translation && !isTranslating && !isRecording && !isTranslatingText) {
       saveHistory({ id: Date.now(), source: transcription, target: translation, sourceLang, targetLang, confidence, timestamp: new Date().toISOString(), note: '' });
-      setHistory(loadHistory());
+      setTimeout(() => setHistory(loadHistory()), 0);
     }
-  }, [translation, isTranslating, isRecording, isTranslatingText]);
+  }, [translation, isTranslating, isRecording, isTranslatingText, confidence, sourceLang, targetLang, transcription]);
 
   // Auto-scroll & focus edit
   useEffect(() => { if (transcriptionRef.current) transcriptionRef.current.scrollTop = transcriptionRef.current.scrollHeight; }, [transcription]);
@@ -184,7 +186,7 @@ const TranslatorDashboard = () => {
       setIsInitialized(true);
     } catch (err) { setInitError(err.message || 'Failed'); setInitProgress(p => ({ ...p, loading: false })); }
   }, []);
-  useEffect(() => { initializeModels(); }, [initializeModels]);
+  useEffect(() => { if (!initRef.current) { initRef.current = true; initializeModels(); } }, [initializeModels]);
 
   useEffect(() => { if (isInitialized) modelLoader.getCacheSize().then(s => setCacheSize(s)); }, [isInitialized]);
 
@@ -248,7 +250,7 @@ const TranslatorDashboard = () => {
   // Share / Export
   const handleShare = async () => {
     const text = `Translation (${getLangInfo(sourceLang).name} → ${getLangInfo(targetLang).name}):\n\n"${translation}"`;
-    if (navigator.share) { try { await navigator.share({ title: 'Translation', text }); } catch {} }
+    if (navigator.share) { try { await navigator.share({ title: 'Translation', text }); } catch { /* no-op */ } }
     else { await navigator.clipboard?.writeText(text); alert('Copied!'); }
   };
   const handleExport = () => {

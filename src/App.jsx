@@ -1,17 +1,12 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import TranslatorDashboard from './components/TranslatorDashboard';
 import './App.css'
 
 function App() {
   const [isOnline, setIsOnline] = useState(navigator.onLine)
-  const [isInstalled, setIsInstalled] = useState(false)
+  const [isInstalled] = useState(() => window.matchMedia('(display-mode: standalone)').matches)
 
   useEffect(() => {
-    // Check if app is installed (PWA)
-    if (window.matchMedia('(display-mode: standalone)').matches) {
-      setIsInstalled(true)
-    }
-
     // Online/Offline status
     const handleOnline = () => setIsOnline(true)
     const handleOffline = () => setIsOnline(false)

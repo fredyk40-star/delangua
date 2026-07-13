@@ -54,18 +54,22 @@ class Translator {
 
   _handleWorkerMessage(event) {
     const { type, data, id } = event.data;
+
+    // Handle broadcast progress messages even without an id
+    if (type === 'PROGRESS') {
+      this.progress = data.progress / 100;
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('translationModelProgress', {
+          detail: { progress: data.progress }
+        }));
+      }
+      return;
+    }
+
     const pending = this._pending.get(id);
     if (!pending) return;
 
     switch (type) {
-      case 'PROGRESS':
-        this.progress = data.progress / 100;
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('translationModelProgress', {
-            detail: { progress: data.progress }
-          }));
-        }
-        break;
       case 'INITIALIZED':
         this.isLoaded = true;
         this.isLoading = false;
@@ -110,14 +114,14 @@ class Translator {
 
     try {
       this.isLoading = true;
-      console.log('� Initializing NLLB translation model in worker...');
+      console.log('🚀 Initializing NLLB translation model in worker...');
       await this._sendMessage('INITIALIZE_TRANSLATION', { model: this.modelName });
       console.log('✅ NLLB translation model initialized in worker');
     } catch (error) {
       console.error('❌ Failed to load translation model:', error);
       this.isLoading = false;
       this.isLoaded = false;
-      throw new Error(`Translation model loading failed: ${error.message}`);
+      throw new Error(`Translation model loading failed: ${error.message}`, { cause: error });
     }
   }
 
@@ -174,7 +178,7 @@ class Translator {
 
     } catch (error) {
       console.error('❌ Translation failed:', error);
-      throw new Error(`Translation error: ${error.message}`);
+      throw new Error(`Translation error: ${error.message}`, { cause: error });
     }
   }
 

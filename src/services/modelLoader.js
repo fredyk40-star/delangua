@@ -192,7 +192,7 @@ export class ModelLoader {
    */
   getModelsByType(type) {
     return Object.entries(this.modelRegistry)
-      .filter(([_, info]) => info.type === type)
+      .filter(([, info]) => info.type === type)
       .map(([name, info]) => ({ name, ...info }));
   }
 }

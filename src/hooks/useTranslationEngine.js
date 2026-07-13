@@ -20,6 +20,54 @@ export const useTranslationEngine = () => {
   const [sourceLanguage] = useState('twi');
   const [targetLanguage] = useState('eng');
 
+  /**
+   * Handle translation of text
+   */
+  const handleTranslate = useCallback(async (text) => {
+    if (!text || !text.trim()) {
+      setTranslation('');
+      return;
+    }
+
+    try {
+      setIsTranslating(true);
+      setTranslationProgress(0);
+      setError(null);
+
+      if (workerRef.current) {
+        // Use WebWorker
+        workerRef.current.postMessage({
+          type: 'TRANSLATE',
+          data: {
+            text: text,
+            sourceLang: sourceLanguage,
+            targetLang: targetLanguage,
+            options: {
+              maxLength: 512,
+              numBeams: 5
+            }
+          },
+          id: Date.now()
+        });
+      } else {
+        // Fallback to main thread
+        const result = await translator.translateText(
+          text,
+          sourceLanguage,
+          targetLanguage
+        );
+        setTranslation(result.translatedText);
+        setIsTranslating(false);
+        setTranslationProgress(100);
+      }
+
+    } catch (error) {
+      console.error('Translation failed:', error);
+      setError(error.message);
+      setIsTranslating(false);
+    }
+  }, [sourceLanguage, targetLanguage]);
+
   // Initialize WebWorker
   useEffect(() => {
     if (window.Worker) {
@@ -78,6 +126,7 @@ export const useTranslationEngine = () => {
       };
 
       workerRef.current = workerInstance;
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setWorker(workerInstance);
     }
 
@@ -100,7 +149,7 @@ export const useTranslationEngine = () => {
       window.removeEventListener('translationProgress', handleTranslationProgress);
       audioUtils.cleanup();
     };
-  }, []);
+  }, [handleTranslate]);
 
   /**
    * Initialize the translation engine
@@ -160,54 +209,6 @@ export const useTranslationEngine = () => {
       setIsInitialized(false);
     }
   }, []);
-
-  /**
-   * Handle translation of text
-   */
-  const handleTranslate = useCallback(async (text) => {
-    if (!text || !text.trim()) {
-      setTranslation('');
-      return;
-    }
-
-    try {
-      setIsTranslating(true);
-      setTranslationProgress(0);
-      setError(null);
-
-      if (workerRef.current) {
-        // Use WebWorker
-        workerRef.current.postMessage({
-          type: 'TRANSLATE',
-          data: {
-            text: text,
-            sourceLang: sourceLanguage,
-            targetLang: targetLanguage,
-            options: {
-              maxLength: 512,
-              numBeams: 5
-            }
-          },
-          id: Date.now()
-        });
-      } else {
-        // Fallback to main thread
-        const result = await translator.translateText(
-          text,
-          sourceLanguage,
-          targetLanguage
-        );
-        setTranslation(result.translatedText);
-        setIsTranslating(false);
-        setTranslationProgress(100);
-      }
-
-    } catch (error) {
-      console.error('Translation failed:', error);
-      setError(error.message);
-      setIsTranslating(false);
-    }
-  }, [sourceLanguage, targetLanguage, worker]);
 
   /**
    * Start recording audio

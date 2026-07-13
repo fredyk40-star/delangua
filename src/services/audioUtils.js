@@ -86,9 +86,9 @@ export class AudioUtils {
     } catch (error) {
       console.error('❌ Failed to start recording:', error);
       if (error.name === 'NotAllowedError') {
-        throw new Error('Microphone access denied. Please allow microphone access.');
+        throw new Error('Microphone access denied. Please allow microphone access.', { cause: error });
       } else if (error.name === 'NotFoundError') {
-        throw new Error('No microphone found. Please connect a microphone.');
+        throw new Error('No microphone found. Please connect a microphone.', { cause: error });
       }
       throw error;
     }

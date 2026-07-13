@@ -4,7 +4,7 @@
  */
 
 // Import Transformers.js as ES module
-import { pipeline, env } from '@xenova/transformers';
+import { pipeline, env } from '@huggingface/transformers';
 
 // Configure environment — required for model downloading and caching
 // Disable local model loading: this app doesn't serve model files from its
@@ -59,20 +59,23 @@ self.addEventListener('message', async (event) => {
         self.postMessage({ type: 'INITIALIZED', data: { model: 'translation' }, id });
         break;
 
-      case 'TRANSCRIBE':
+      case 'TRANSCRIBE': {
         const transcription = await transcribe(data);
         self.postMessage({ type: 'TRANSCRIPTION_RESULT', data: transcription, id });
         break;
+      }
 
-      case 'TRANSLATE':
+      case 'TRANSLATE': {
         const translation = await translate(data);
         self.postMessage({ type: 'TRANSLATION_RESULT', data: translation, id });
         break;
+      }
 
-      case 'TRANSCRIBE_AND_TRANSLATE':
+      case 'TRANSCRIBE_AND_TRANSLATE': {
         const result = await transcribeAndTranslate(data);
         self.postMessage({ type: 'FULL_RESULT', data: result, id });
         break;
+      }
 
       case 'GET_STATUS':
         self.postMessage({ 
@@ -130,7 +133,7 @@ async function initializeASR(options = {}) {
             } 
           });
         },
-        quantized: true
+        dtype: 'q8'
       }
     );
 

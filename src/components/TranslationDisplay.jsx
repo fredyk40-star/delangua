@@ -1,4 +1,3 @@
-import React from 'react';
 import './TranslationDisplay.css';
 
 const TranslationDisplay = ({ 

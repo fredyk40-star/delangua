@@ -33,18 +33,22 @@ class SpeechProcessor {
 
   _handleWorkerMessage(event) {
     const { type, data, id } = event.data;
+
+    // Handle broadcast progress messages even without an id
+    if (type === 'PROGRESS') {
+      this.progress = data.progress / 100;
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('modelProgress', {
+          detail: { progress: data.progress }
+        }));
+      }
+      return;
+    }
+
     const pending = this._pending.get(id);
     if (!pending) return;
 
     switch (type) {
-      case 'PROGRESS':
-        this.progress = data.progress / 100;
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('modelProgress', {
-            detail: { progress: data.progress }
-          }));
-        }
-        break;
       case 'INITIALIZED':
         this.isLoaded = true;
         this.isLoading = false;
@@ -96,7 +100,7 @@ class SpeechProcessor {
       console.error('❌ Failed to load Whisper model:', error);
       this.isLoading = false;
       this.isLoaded = false;
-      throw new Error(`Model loading failed: ${error.message}`);
+      throw new Error(`Model loading failed: ${error.message}`, { cause: error });
     }
   }
 
@@ -128,7 +132,7 @@ class SpeechProcessor {
 
     } catch (error) {
       console.error('❌ Transcription failed:', error);
-      throw new Error(`Transcription error: ${error.message}`);
+      throw new Error(`Transcription error: ${error.message}`, { cause: error });
     }
   }
 

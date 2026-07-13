@@ -1,4 +1,3 @@
-import React from 'react';
 import useTranslationEngine from '../hooks/useTranslationEngine';
 import './Controls.css';
 

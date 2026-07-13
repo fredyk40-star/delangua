@@ -1,5 +1,5 @@
 // src/components/TestFullPipeline.jsx
-import React, { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import useTranslationEngine from '../hooks/useTranslationEngine';
 
 export const TestFullPipeline = () => {
@@ -18,9 +18,13 @@ export const TestFullPipeline = () => {
     translateText
   } = useTranslationEngine();
 
+  const initRef = useRef(false);
   useEffect(() => {
-    initializeEngine();
-  }, []);
+    if (!initRef.current) {
+      initRef.current = true;
+      initializeEngine();
+    }
+  }, [initializeEngine]);
 
   const testTranslation = () => {
     translateText('Me din de Fred. Ete sen?');
